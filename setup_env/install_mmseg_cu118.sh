@@ -60,6 +60,8 @@ default_install_libraries=(
     "ftfy==6.3.1"
     "colcon-common-extensions==0.3.0"
     "pydantic"
+    "future"
+    "tensorboard"
 )
 
 echo "Installing MMSegmentation and other default libraries..."

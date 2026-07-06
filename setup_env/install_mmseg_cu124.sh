@@ -64,6 +64,7 @@ default_install_libraries=(
     "tensorboard"
     "prettytable"
     "scipy"
+    "future"   
 )
 # NOTE: colcon-common-extensions (ROS2 build tool) removed — unrelated to
 # mmsegmentation/PyTorch. Add it back if this container genuinely needs ROS2.
