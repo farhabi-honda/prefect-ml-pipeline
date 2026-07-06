@@ -28,10 +28,13 @@ class TrainRequest(BaseModel):
     branch: str | None = None
     config_path: str | None = None
     work_dir: str | None = None
+    train_script: str | None = None
     extra_args: list[str] | None = None
     data_s3_uri: str | None = None       # e.g. "s3://my-bucket/datasets/cityscapes/"
     artifacts_s3_uri: str | None = None  # e.g. "s3://my-bucket/runs/segmentation/run-001/"
     dataset_dir: str | None = None
+    use_baked_repo: bool = False
+    local_repo_path: str | None = None
 
 
 @app.get("/health")
@@ -48,7 +51,6 @@ async def trigger_training(model_name: str, req: TrainRequest):
             detail=f"Unknown model '{model_name}'. Available: {list(MODEL_DEPLOYMENTS.keys())}",
         )
 
-    # Only pass fields the caller actually set — otherwise the flow's own
     # defaults (e.g. repo_url, branch) get overridden with None.
     parameters = {k: v for k, v in req.model_dump().items() if v is not None}
 
@@ -66,4 +68,5 @@ async def trigger_training(model_name: str, req: TrainRequest):
         "flow_run_id": str(flow_run.id),
         "model": model_name,
         "deployment": deployment_name,
+        "parameters_sent": parameters,  # helpful for debugging exactly this kind of issue
     }

@@ -31,6 +31,7 @@ services:
   prefect-worker:
     image: prefect-ml-training:local
     container_name: prefect-worker
+    ipc: host
     depends_on:
       prefect-server:
         condition: service_healthy
