@@ -1,0 +1,98 @@
+services:
+  prefect-server:
+    build:
+      context: .
+      args:
+        # Compose reads these from its OWN environment (shell-exported vars,
+        # or a .env file sitting beside this docker-compose.yml) and passes
+        # them as --build-arg into the Dockerfile's ARG http_proxy etc.
+        # Without this block, ARG in the Dockerfile stays empty no matter
+        # what's in .env or .bashrc — Compose doesn't forward anything into
+        # the build unless it's listed here.
+        http_proxy: ${http_proxy:-}
+        https_proxy: ${https_proxy:-}
+        no_proxy: ${no_proxy:-}
+    image: prefect-ml-training:local
+    container_name: prefect-server
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+    volumes:
+      - prefect-data:/root/.prefect
+    environment:
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health').read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  prefect-worker:
+    image: prefect-ml-training:local
+    container_name: prefect-worker
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    command: >
+      sh -c "
+        prefect config set PREFECT_API_URL=http://prefect-server:4200/api &&
+        (prefect work-pool create local-process-pool --type process || true) &&
+        prefect worker start --pool local-process-pool
+      "
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      TRAINING_REPOS_DIR: /workspace/repos
+      TRAINING_RUNS_DIR: /workspace/runs
+      TRAINING_DATASETS_DIR: /workspace/datasets
+      # segenv/flowenv are BAKED INTO THE IMAGE at /app/segenv, /app/flowenv
+      # — no volume needed for those, they're not runtime-created anymore.
+      NVIDIA_VISIBLE_DEVICES: all
+      # AWS creds for local testing only — on EC2/ECS in production, use an
+      # IAM instance/task role instead and drop these entirely (see README).
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
+      NO_PROXY : localhost,127.0.0.1,prefect-server
+      no_proxy : localhost,127.0.0.1,prefect-server
+      http_proxy : ${http_proxy}
+      https_proxy : ${https_proxy}
+    volumes:
+      # Cloned model repos, training outputs, AND the local dataset cache —
+      # the whole point of syncing S3 data down before training is fast
+      # local disk access, so this volume is what makes repeat triggers
+      # against the same dataset skip most of the download.
+      - training-repos:/workspace/repos
+      - training-runs:/workspace/runs
+      - training-datasets:/workspace/datasets
+      - /home/hutomo/Work/model_pipeline/mmsegmentation:/workspace/local-repo 
+    # Uncomment for local GPU testing (requires nvidia-container-toolkit on host):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  trigger-api:
+    image: prefect-ml-training:local
+    container_name: trigger-api
+    depends_on:
+      prefect-server:
+        condition: service_healthy
+    command: uvicorn api.trigger:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      PREFECT_API_URL: http://prefect-server:4200/api
+      NO_PROXY : localhost,127.0.0.1,prefect-server
+      no_proxy : localhost,127.0.0.1,prefect-server
+      http_proxy : ${http_proxy}
+      https_proxy : ${https_proxy}
+
+volumes:
+  prefect-data:
+  training-repos:
+  training-runs:
+  training-datasets:
