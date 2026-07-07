@@ -36,7 +36,7 @@ BAKED_MMSEG_PATH = Path("/app/mmsegmentation")  # baked in at image build time
 
 
 @task(retries=1, retry_delay_seconds=15)
-def read_dataset(dataset_uri: str) -> dict:
+def read_dataset(dataset_uri: str, backend_type: str) -> dict:
     pass
 
 
@@ -108,30 +108,13 @@ def upload_artifacts(work_dir: str, artifacts_s3_uri: str | None) -> str | None:
 
 
 @flow(name="segmentation-train-flow")
-def segmentation_train_flow(model_cfg: MLModel):
+def train(config):
     logger = get_run_logger()
-    work_dir = work_dir or str(RUNS_ROOT / "segmentation" / "latest")
-    dataset_dir = dataset_dir or str(DATASETS_ROOT / "segmentation")
 
-    if local_repo_path:
-        repo_dir = Path(local_repo_path)
-        logger.info(
-            f"LOCAL MODE: using bind-mounted repo at {repo_dir} (your host's live copy)"
-        )
-        if not repo_dir.exists():
-            raise RuntimeError(
-                f"local_repo_path {repo_dir} doesn't exist inside the container. "
-                f"Check the volume bind mount in docker-compose.yml actually points "
-                f"at your local mmsegmentation folder."
-            )
-    elif use_baked_repo:
-        logger.info(
-            f"BAKED MODE: using the mmsegmentation baked into the image at {BAKED_MMSEG_PATH}"
-        )
-        repo_dir = BAKED_MMSEG_PATH
-    else:
-        repo_dir = clone_model_repo(repo_url, branch, dir_name="segmentation-train")
-        install_extra_requirements(repo_dir)
+    dataset = read_dataset(config.dataset_uri, config.backend_type)
+
+    repo_dir = clone_model_repo(repo_url, branch, dir_name="segmentation-train")
+    install_extra_requirements(repo_dir)
 
     download_dataset(data_s3_uri, dataset_dir)
     result = run_training(repo_dir, config_path, work_dir, train_script, extra_args)

@@ -66,7 +66,11 @@ async def trigger(req: TrainRequest):
         if not train_cfg:
             raise ValueError(f"Failed to find train config for {model_name}.")
 
-        flow_cfg = PrefectConfig(model_cfg=train_cfg.model_cfg, dataset_uri=dataset_uri)
+        flow_cfg = PrefectConfig(
+            model_cfg=train_cfg.model_cfg,
+            dataset_uri=dataset_uri,
+            backend_type=config.backend_type,
+        )
         flow_run = await run_deployment(
             name=config.deployment_name,
             parameters=flow_cfg,

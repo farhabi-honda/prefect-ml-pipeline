@@ -38,6 +38,7 @@ class TrainRequest(BaseModel):
 class PrefectConfig(BaseModel):
     model_cfg: ModelConfig
     dataset_uri: str
+    backend_type: str
 
 
 @lru_cache
