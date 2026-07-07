@@ -4,12 +4,10 @@ Shared helpers for model-training flows.
 Architecture: framework envs (segenv, flowenv, ...) are baked into the
 image at BUILD time (see Dockerfile + setup_env/*.sh) — nothing gets
 pip/mim-installed at trigger time. At RUN time, a flow only needs to:
-  1. clone the lightweight model repo (configs / custom training code)
-  2. run it using the pre-built env's python
-
-This keeps triggers fast (no install step) and reproducible (the exact
-framework version is fixed in the image, not whatever `pip install` happens
-to resolve on a given day).
+  1. get the lightweight model repo's code (clone / bind-mount / baked-in)
+  2. run it using the pre-built env's python, with PYTHONPATH pointed at
+     THAT repo so it shadows the pip-installed package of the same name
+     (see PrebuiltEnv.run's extra_env / prepend_pythonpath)
 """
 
 import os
@@ -40,9 +38,8 @@ def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) ->
 
 
 def clone_or_update_repo(repo_url: str, branch: str, dir_name: str) -> Path:
-    """Clone (or pull-latest) a lightweight MODEL repo — configs/custom code
-    that depends on a framework already baked into the image. This is the
-    only thing that happens at trigger time."""
+    """Clone (or pull-latest) a lightweight MODEL repo. This is the only
+    thing that happens at trigger time in the default (non-test) path."""
     logger = get_run_logger()
     REPO_ROOT.mkdir(parents=True, exist_ok=True)
     target = REPO_ROOT / dir_name
@@ -60,19 +57,7 @@ def clone_or_update_repo(repo_url: str, branch: str, dir_name: str) -> Path:
 
 
 def s3_sync_down(s3_uri: str, local_dir: str, extra_args: list[str] | None = None) -> Path:
-    """
-    Sync training data from S3 to local disk BEFORE training.
-
-    Uses `aws s3 sync` rather than a live mount (s3fs/mountpoint-s3): training
-    dataloaders do lots of small random reads, and networked filesystems
-    handle that pattern poorly compared to local disk. Sync is idempotent —
-    only new/changed objects transfer — so repeat triggers against the same
-    S3 prefix are fast once the local cache (a Docker volume) is warm.
-
-    If your dataset is too large to fit on local disk, mountpoint-s3 is the
-    right tool instead — but that's a different trade-off (throughput vs
-    capacity), not the default here.
-    """
+    """Sync training data from S3 to local disk BEFORE training."""
     logger = get_run_logger()
     local_path = Path(local_dir)
     local_path.mkdir(parents=True, exist_ok=True)
@@ -85,8 +70,7 @@ def s3_sync_down(s3_uri: str, local_dir: str, extra_args: list[str] | None = Non
 
 
 def s3_sync_up(local_path: str, s3_uri: str, extra_args: list[str] | None = None) -> None:
-    """Sync training outputs (checkpoints, logs, metrics) from local disk up
-    to S3 AFTER training. Same idempotent-sync approach as s3_sync_down."""
+    """Sync training outputs up to S3 AFTER training."""
     logger = get_run_logger()
     logger.info(f"Syncing {local_path} -> {s3_uri}")
     cmd = ["aws", "s3", "sync", str(local_path), s3_uri]
@@ -112,8 +96,26 @@ class PrebuiltEnv:
                 f"(see setup_env/) — it is not created at run time."
             )
 
-    def run(self, args: list[str], cwd: Path | None = None) -> None:
-        run_cmd([str(self.python), *args], cwd=cwd)
+    def run(
+        self,
+        args: list[str],
+        cwd: Path | None = None,
+        prepend_pythonpath: Path | str | None = None,
+    ) -> None:
+        """
+        prepend_pythonpath: put this path FIRST on PYTHONPATH for this
+        subprocess only. Use this when running training code from a repo
+        that ISN'T the one baked into segenv's editable install — e.g. a
+        freshly cloned or bind-mounted model repo. Without this, `import
+        mmseg` (or whatever the package is called) resolves to the
+        pip-installed editable copy at /app/mmsegmentation, silently
+        ignoring your repo's actual code, even if you `cwd` into it.
+        """
+        env = None
+        if prepend_pythonpath:
+            existing = os.environ.get("PYTHONPATH", "")
+            env = {"PYTHONPATH": f"{prepend_pythonpath}:{existing}" if existing else str(prepend_pythonpath)}
+        run_cmd([str(self.python), *args], cwd=cwd, env=env)
 
     def pip_install(self, *args: str) -> None:
         """Only for a model repo's OWN lightweight extra deps (rare — most

@@ -5,12 +5,17 @@ Three ways this flow can get its mmsegmentation code, controlled by which
 parameters you pass (checked in this priority order):
 
 1. local_repo_path given -> use a repo bind-mounted from your HOST machine
-   (see docker-compose.yml volume mount below). Use this to test against a
-   repo you're actively editing locally, without cloning or rebuilding the
-   image.
+   (see docker-compose.yml volume mount). Use this to test against a repo
+   you're actively editing locally, without cloning or rebuilding the image.
 2. use_baked_repo=True -> use the mmsegmentation baked into the image at
    build time (/app/mmsegmentation, from setup_env/install_mmseg_cu124.sh).
 3. otherwise (default) -> clone repo_url fresh, the real production path.
+
+Whichever repo_dir is used, PYTHONPATH is prepended with it at training-launch
+time (see run_training) so `import mmseg` resolves to THAT repo's code, not
+the pip-installed editable copy pointing at /app/mmsegmentation baked into
+segenv at build time. This matters most for cases 1 and 3, where repo_dir is
+a DIFFERENT directory than the one segenv's editable install points at.
 """
 
 from pathlib import Path
@@ -38,7 +43,10 @@ def clone_model_repo(repo_url: str, branch: str, dir_name: str) -> Path:
 @task
 def install_extra_requirements(repo_dir: Path) -> None:
     """Optional: only if the model repo ships its own requirements.txt with
-    a few extra deps on top of segenv. Skips cleanly if there isn't one."""
+    a few extra deps on top of segenv. Skips cleanly if there isn't one.
+    NOTE: this installs additional packages — it does NOT (and should not)
+    re-install mmsegmentation itself in editable mode. See run_training's
+    prepend_pythonpath for how code resolution is handled instead."""
     logger = get_run_logger()
     req_file = repo_dir / "requirements.txt"
     if not req_file.exists():
@@ -50,8 +58,6 @@ def install_extra_requirements(repo_dir: Path) -> None:
 
 @task(retries=2, retry_delay_seconds=30)
 def download_dataset(data_s3_uri: str | None, dataset_dir: str) -> str | None:
-    """Sync training data from S3 to local disk before training. Skipped
-    entirely if no data_s3_uri is given."""
     if not data_s3_uri:
         get_run_logger().info("No data_s3_uri provided, skipping dataset download")
         return None
@@ -76,15 +82,17 @@ def run_training(
         cmd += extra_args
 
     logger.info(f"[{ENV_NAME}] launching training: {train_script} {config_path} (cwd={repo_dir})")
-    env.run(cmd, cwd=repo_dir)
+    # prepend_pythonpath=repo_dir: makes `import mmseg` resolve to THIS
+    # repo's code first, ahead of segenv's baked-in editable install at
+    # /app/mmsegmentation. Safe under concurrency (per-subprocess env, no
+    # shared state mutated) and free (no pip re-resolution on every run).
+    env.run(cmd, cwd=repo_dir, prepend_pythonpath=repo_dir)
 
     return {"status": "completed", "work_dir": work_dir, "config_path": config_path}
 
 
 @task(retries=2, retry_delay_seconds=30)
 def upload_artifacts(work_dir: str, artifacts_s3_uri: str | None) -> str | None:
-    """Sync checkpoints/logs up to S3 after training. Skipped if no
-    artifacts_s3_uri given."""
     if not artifacts_s3_uri:
         get_run_logger().info("No artifacts_s3_uri provided, skipping upload")
         return None
@@ -104,7 +112,7 @@ def segmentation_train_flow(
     artifacts_s3_uri: str | None = None,
     dataset_dir: str | None = None,
     use_baked_repo: bool = False,
-    local_repo_path: str | None = None,  # e.g. "/workspace/local-repo" — see docker-compose bind mount
+    local_repo_path: str | None = None,
 ):
     logger = get_run_logger()
     work_dir = work_dir or str(RUNS_ROOT / "segmentation" / "latest")
