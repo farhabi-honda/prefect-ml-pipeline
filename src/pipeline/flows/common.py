@@ -14,12 +14,14 @@ import os
 import subprocess
 from pathlib import Path
 
-from prefect import get_run_logger
+from pipeline import get_run_logger
 
 REPO_ROOT = Path(os.getenv("TRAINING_REPOS_DIR", "/workspace/repos"))
 RUNS_ROOT = Path(os.getenv("TRAINING_RUNS_DIR", "/workspace/runs"))
 DATASETS_ROOT = Path(os.getenv("TRAINING_DATASETS_DIR", "/workspace/datasets"))
-ENVS_ROOT = Path(os.getenv("TRAINING_ENVS_DIR", "/app"))  # segenv/flowenv live at /app/<name>env
+ENVS_ROOT = Path(
+    os.getenv("TRAINING_ENVS_DIR", "/app")
+)  # segenv/flowenv live at /app/<name>env
 
 
 def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) -> None:
@@ -28,13 +30,20 @@ def run_cmd(cmd: list[str], cwd: Path | None = None, env: dict | None = None) ->
     logger.info(f"$ {' '.join(cmd)}  (cwd={cwd})")
     full_env = {**os.environ, **(env or {})}
     process = subprocess.Popen(
-        cmd, cwd=cwd, env=full_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+        cmd,
+        cwd=cwd,
+        env=full_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
     )
     for line in process.stdout:
         logger.info(line.rstrip())
     process.wait()
     if process.returncode != 0:
-        raise RuntimeError(f"Command failed (exit {process.returncode}): {' '.join(cmd)}")
+        raise RuntimeError(
+            f"Command failed (exit {process.returncode}): {' '.join(cmd)}"
+        )
 
 
 def clone_or_update_repo(repo_url: str, branch: str, dir_name: str) -> Path:
@@ -51,12 +60,16 @@ def clone_or_update_repo(repo_url: str, branch: str, dir_name: str) -> Path:
         run_cmd(["git", "pull", "origin", branch], cwd=target)
     else:
         logger.info(f"Cloning {repo_url} ({branch}) into {target}")
-        run_cmd(["git", "clone", "--branch", branch, "--depth", "1", repo_url, str(target)])
+        run_cmd(
+            ["git", "clone", "--branch", branch, "--depth", "1", repo_url, str(target)]
+        )
 
     return target
 
 
-def s3_sync_down(s3_uri: str, local_dir: str, extra_args: list[str] | None = None) -> Path:
+def s3_sync_down(
+    s3_uri: str, local_dir: str, extra_args: list[str] | None = None
+) -> Path:
     """Sync training data from S3 to local disk BEFORE training."""
     logger = get_run_logger()
     local_path = Path(local_dir)
@@ -69,7 +82,9 @@ def s3_sync_down(s3_uri: str, local_dir: str, extra_args: list[str] | None = Non
     return local_path
 
 
-def s3_sync_up(local_path: str, s3_uri: str, extra_args: list[str] | None = None) -> None:
+def s3_sync_up(
+    local_path: str, s3_uri: str, extra_args: list[str] | None = None
+) -> None:
     """Sync training outputs up to S3 AFTER training."""
     logger = get_run_logger()
     logger.info(f"Syncing {local_path} -> {s3_uri}")
@@ -114,7 +129,13 @@ class PrebuiltEnv:
         env = None
         if prepend_pythonpath:
             existing = os.environ.get("PYTHONPATH", "")
-            env = {"PYTHONPATH": f"{prepend_pythonpath}:{existing}" if existing else str(prepend_pythonpath)}
+            env = {
+                "PYTHONPATH": (
+                    f"{prepend_pythonpath}:{existing}"
+                    if existing
+                    else str(prepend_pythonpath)
+                )
+            }
         run_cmd([str(self.python), *args], cwd=cwd, env=env)
 
     def pip_install(self, *args: str) -> None:

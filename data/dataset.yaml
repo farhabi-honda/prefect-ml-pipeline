@@ -1,0 +1,95 @@
+schema_version: "1.0"
+
+uuid: "8b9c1e84-f7a6-4f65-84aa-7cb71c3db4b2"
+
+name: Seg ROS Dataset
+description: >
+  Marine object detection dataset.
+
+id: seg_ros
+version: v20260707
+type: unit
+
+storage:
+  backend: s3
+  path_style: relative
+  data_root: s3://ml-analytics/raw
+  annotation_root: s3://ml-analytics/annotation
+  data_extensions: [.png]
+  annotation_extensions: [.png, .json]
+
+artifacts:
+  samples_path: samples.parquet
+  samples_extension: parquet
+
+dataset:
+  modalities: [image]
+  annotation_types: [segmentation, bbox]
+
+  classes:
+    - id: 0
+      name: buoy
+    - id: 1
+      name: vessel
+    - id: 2
+      name: person
+
+  splits:
+    - train: 0.7
+    - test: 0.2
+    - val: 0.1
+
+  statistics:
+    total_samples: 125842
+    train: 100000
+    val: 12842
+    test: 13000
+
+integrity:
+  checksum_algorithm: sha256
+  metadata_checksum: b72b0c2c2a91b54a
+
+validation:
+  date: ""
+  validator:
+    name: ""
+    version: ""
+
+lineage:
+  parent_version: v20260606
+  data_sources:
+    - 2026/04/01/060000
+    - 2026/04/02/060000
+    - 2026/04/03/060000
+
+  annotation_sources:
+    - 2026/04/01/060000/v20260401
+    - 2026/04/01/060000/v20260501
+    - 2026/04/01/060000/v20260601
+
+    - 2026/04/02/060000/v20260401
+
+    - 2026/04/03/060000/v20260501
+    - 2026/04/03/060000/v20260601
+
+  group_id: null
+  git_commit: ""
+
+governance:
+  license: null
+  owner: Perception Team
+  policies:
+    retention: indefinite
+    security: null
+    pii: null
+    compliance: null
+
+created:
+  timestamp: 2026-07-02T09:42:13Z
+  created_by: dataset_builder
+  builder_version: "1.4.0"
+
+tags:
+  - marine
+  - detection
+  - production

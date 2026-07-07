@@ -1,4 +1,13 @@
-backend_type: s3
+storage:
+  type: s3
+
+  s3:
+    bucket: ml-analytics
+    endpoint_url: https://localhost:9000
+    aws_access_key_id: admin
+    aws_secret_access_key: admin12345
+    region_name: ""
+
 dataset_root_uri: s3://ml-analytics/datasets
 
 train_configs:
@@ -25,3 +34,12 @@ registered_model_names:
   - det_ros
 
 deployment_name: marine-mlops
+
+timeout:
+  training: 3600
+  evaluation: 1800
+
+retry:
+  attempts: 3
+  delay: 5
+  backoff: 2

@@ -20,24 +20,29 @@ a DIFFERENT directory than the one segenv's editable install points at.
 
 from pathlib import Path
 
-from prefect import flow, task, get_run_logger
-
 from common import (
+    DATASETS_ROOT,
+    RUNS_ROOT,
+    PrebuiltEnv,
     clone_or_update_repo,
     s3_sync_down,
     s3_sync_up,
-    PrebuiltEnv,
-    RUNS_ROOT,
-    DATASETS_ROOT,
 )
+
+from config import StorageInterface, PrefectConfig
+from prefect import flow, get_run_logger, task
 
 ENV_NAME = "segenv"
 BAKED_MMSEG_PATH = Path("/app/mmsegmentation")  # baked in at image build time
 
+FLOW_NAME = "mmseg-train-flow"
+
 
 @task(retries=1, retry_delay_seconds=15)
-def read_dataset(dataset_uri: str, backend_type: str) -> dict:
-    pass
+def read_dataset(dataset_uri: str, storage_iface: StorageInterface) -> dict:
+    logger = get_run_logger()
+    logger.info(f"Reading {dataset_uri} using {storage_iface.__class__.__name__} ...")
+    return storage_iface.read_yaml(dataset_uri)
 
 
 @task(retries=1, retry_delay_seconds=15)
@@ -107,11 +112,12 @@ def upload_artifacts(work_dir: str, artifacts_s3_uri: str | None) -> str | None:
     return artifacts_s3_uri
 
 
-@flow(name="segmentation-train-flow")
-def train(config):
+@flow(name=FLOW_NAME)
+def train(config: PrefectConfig) -> dict:
     logger = get_run_logger()
 
-    dataset = read_dataset(config.dataset_uri, config.backend_type)
+    # Read dataset.yaml from storage (S3 or local)
+    dataset = read_dataset(config.dataset_uri, config.storage_iface)
 
     repo_dir = clone_model_repo(repo_url, branch, dir_name="segmentation-train")
     install_extra_requirements(repo_dir)

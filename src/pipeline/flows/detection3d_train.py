@@ -9,9 +9,9 @@ script (mirroring install_mmseg_cu124.sh) before this flow will actually run.
 
 from pathlib import Path
 
-from prefect import flow, task, get_run_logger
+from pipeline import flow, task, get_run_logger
 
-from src.prefect.flows.common import (
+from src.pipeline.flows.common import (
     clone_or_update_repo,
     s3_sync_down,
     s3_sync_up,

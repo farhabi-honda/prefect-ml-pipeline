@@ -10,30 +10,55 @@ Run locally with:
     uvicorn api.trigger:app --host 0.0.0.0 --port 8000 --reload
 """
 
+import os
+
 from fastapi import FastAPI, HTTPException
 
-from config import PrefectConfig, TrainRequest, get_config
-from prefect.deployments import run_deployment
+from config import Config, PrefectConfig, StorageInterface, TrainRequest, get_config
+from pipeline.deployments import run_deployment
 
 
 class Utils:
     @staticmethod
     def get_model_name(dataset_uri: str) -> str:
         if dataset_uri.startswith("s3://"):
-            dataset_uri = dataset_uri[4:]
+            dataset_uri = dataset_uri[5:]
         model_name = dataset_uri.split("/")[3]
         return model_name
 
     @staticmethod
     def get_dataset_name(dataset_uri: str) -> str:
         if dataset_uri.startswith("s3://"):
-            dataset_uri = dataset_uri[4:]
-        model_name = dataset_uri.split("/")[4]
-        return model_name
+            dataset_uri = dataset_uri[5:]
+        dataset_name = dataset_uri.split("/")[4]
+        return dataset_name
+
+
+def get_storage_interface(config: Config) -> StorageInterface:
+    """
+    Returns an instance of the appropriate StorageInterface based on the storage type specified in the config.
+    """
+    if config.storage_cfg.type == "s3":
+        from pipeline.storage.s3 import S3Storage
+
+        return S3Storage(
+            endpoint_url=config.storage_cfg.s3.endpoint_url,
+            aws_access_key_id=config.storage_cfg.s3.aws_access_key_id
+            or os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=config.storage_cfg.s3.aws_secret_access_key
+            or os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        )
+    elif config.storage_cfg.type == "local":
+        from pipeline.storage.local import LocalStorage
+
+        return LocalStorage()
+    else:
+        raise ValueError(f"Unsupported storage type: {config.storage_cfg.type}")
 
 
 config = get_config()
 app = FastAPI(title="ML Training Trigger API")
+storage_iface = get_storage_interface(config)
 
 
 @app.get("/health")
@@ -67,9 +92,11 @@ async def trigger(req: TrainRequest):
             raise ValueError(f"Failed to find train config for {model_name}.")
 
         flow_cfg = PrefectConfig(
-            model_cfg=train_cfg.model_cfg,
             dataset_uri=dataset_uri,
-            backend_type=config.backend_type,
+            model_cfg=train_cfg.model_cfg,
+            storage_iface=storage_iface,
+            timeout_cfg=config.timeout,
+            retry_cfg=config.retry,
         )
         flow_run = await run_deployment(
             name=config.deployment_name,
