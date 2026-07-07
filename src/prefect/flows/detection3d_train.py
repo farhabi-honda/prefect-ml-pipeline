@@ -11,7 +11,7 @@ from pathlib import Path
 
 from prefect import flow, task, get_run_logger
 
-from flows.common import (
+from src.prefect.flows.common import (
     clone_or_update_repo,
     s3_sync_down,
     s3_sync_up,

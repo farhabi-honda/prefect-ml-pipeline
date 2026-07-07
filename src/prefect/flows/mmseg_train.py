@@ -22,7 +22,7 @@ from pathlib import Path
 
 from prefect import flow, task, get_run_logger
 
-from flows.common import (
+from common import (
     clone_or_update_repo,
     s3_sync_down,
     s3_sync_up,
@@ -33,6 +33,11 @@ from flows.common import (
 
 ENV_NAME = "segenv"
 BAKED_MMSEG_PATH = Path("/app/mmsegmentation")  # baked in at image build time
+
+
+@task(retries=1, retry_delay_seconds=15)
+def read_dataset(dataset_uri: str) -> dict:
+    pass
 
 
 @task(retries=1, retry_delay_seconds=15)
@@ -81,7 +86,9 @@ def run_training(
     if extra_args:
         cmd += extra_args
 
-    logger.info(f"[{ENV_NAME}] launching training: {train_script} {config_path} (cwd={repo_dir})")
+    logger.info(
+        f"[{ENV_NAME}] launching training: {train_script} {config_path} (cwd={repo_dir})"
+    )
     # prepend_pythonpath=repo_dir: makes `import mmseg` resolve to THIS
     # repo's code first, ahead of segenv's baked-in editable install at
     # /app/mmsegmentation. Safe under concurrency (per-subprocess env, no
@@ -101,26 +108,16 @@ def upload_artifacts(work_dir: str, artifacts_s3_uri: str | None) -> str | None:
 
 
 @flow(name="segmentation-train-flow")
-def segmentation_train_flow(
-    repo_url: str = "https://github.com/YOUR_ORG/segmentation-train.git",
-    branch: str = "main",
-    config_path: str = "configs/pspnet/pspnet_r50-d8_4xb2-40k_cityscapes-512x1024.py",
-    work_dir: str | None = None,
-    train_script: str = "tools/train.py",
-    extra_args: list[str] | None = None,
-    data_s3_uri: str | None = None,
-    artifacts_s3_uri: str | None = None,
-    dataset_dir: str | None = None,
-    use_baked_repo: bool = False,
-    local_repo_path: str | None = None,
-):
+def segmentation_train_flow(model_cfg: MLModel):
     logger = get_run_logger()
     work_dir = work_dir or str(RUNS_ROOT / "segmentation" / "latest")
     dataset_dir = dataset_dir or str(DATASETS_ROOT / "segmentation")
 
     if local_repo_path:
         repo_dir = Path(local_repo_path)
-        logger.info(f"LOCAL MODE: using bind-mounted repo at {repo_dir} (your host's live copy)")
+        logger.info(
+            f"LOCAL MODE: using bind-mounted repo at {repo_dir} (your host's live copy)"
+        )
         if not repo_dir.exists():
             raise RuntimeError(
                 f"local_repo_path {repo_dir} doesn't exist inside the container. "
@@ -128,7 +125,9 @@ def segmentation_train_flow(
                 f"at your local mmsegmentation folder."
             )
     elif use_baked_repo:
-        logger.info(f"BAKED MODE: using the mmsegmentation baked into the image at {BAKED_MMSEG_PATH}")
+        logger.info(
+            f"BAKED MODE: using the mmsegmentation baked into the image at {BAKED_MMSEG_PATH}"
+        )
         repo_dir = BAKED_MMSEG_PATH
     else:
         repo_dir = clone_model_repo(repo_url, branch, dir_name="segmentation-train")

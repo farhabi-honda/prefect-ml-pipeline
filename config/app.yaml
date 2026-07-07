@@ -1,0 +1,27 @@
+backend_type: s3
+dataset_root_uri: s3://ml-analytics/datasets
+
+train_configs:
+  - model:
+      name: seg_ros
+      repo_uri: http://github.com/Marine-AD/seg_ros.git
+      commit: "123456789"
+      config_path: http://github.com/Marine-AD/seg_ros.git/config/train.yaml
+      train_script_relpath: train/train.py
+      extra_args: []
+    flow_name: seg_ros_train
+
+  - model:
+      name: det_ros
+      repo_uri: http://github.com/Marine-AD/det_ros.git
+      commit: "123456789"
+      config_path: http://github.com/Marine-AD/det_ros.git/config/train.yaml
+      train_script_relpath: train/train.py
+      extra_args: []
+    flow_name: det_ros_train
+
+registered_model_names:
+  - seg_ros
+  - det_ros
+
+deployment_name: marine-mlops
