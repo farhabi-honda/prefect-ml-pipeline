@@ -29,7 +29,7 @@ from common import (
     s3_sync_up,
 )
 
-from config import StorageInterface, PrefectConfig
+from pipeline.config import StorageInterface, PrefectConfig
 from prefect import flow, get_run_logger, task
 
 ENV_NAME = "segenv"

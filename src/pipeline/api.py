@@ -14,7 +14,13 @@ import os
 
 from fastapi import FastAPI, HTTPException
 
-from config import Config, PrefectConfig, StorageInterface, TrainRequest, get_config
+from pipeline.config import (
+    Config,
+    PrefectConfig,
+    StorageInterface,
+    TrainRequest,
+    get_config,
+)
 from pipeline.deployments import run_deployment
 
 
